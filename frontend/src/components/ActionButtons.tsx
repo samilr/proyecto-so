@@ -11,6 +11,8 @@ import type { ServiceAction, ServiceState } from '../types/api';
 interface ActionButtonsProps {
   status: ServiceState;
   isAdmin: boolean;
+  /** La unidad no existe en el host y ninguna accion puede ejecutarse. */
+  unavailable?: boolean;
   /** true mientras la fila tiene una accion en curso. */
   busy: boolean;
   onAction: (action: ServiceAction) => void;
@@ -19,7 +21,13 @@ interface ActionButtonsProps {
 const BASE =
   'inline-flex items-center justify-center rounded-md px-2.5 py-1.5 text-xs font-semibold text-white transition focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40';
 
-export function ActionButtons({ status, isAdmin, busy, onAction }: ActionButtonsProps) {
+export function ActionButtons({
+  status,
+  isAdmin,
+  unavailable = false,
+  busy,
+  onAction,
+}: ActionButtonsProps) {
   if (!isAdmin) {
     return (
       <span
@@ -34,7 +42,10 @@ export function ActionButtons({ status, isAdmin, busy, onAction }: ActionButtons
   // Un servicio en transicion (activating/deactivating) tampoco admite
   // ordenes nuevas: se esperaria a que systemd termine el job actual.
   const inTransition = status === 'activating' || status === 'deactivating';
-  const disabled = busy || inTransition;
+  const disabled = busy || inTransition || unavailable;
+  const actionTitle = unavailable
+    ? 'Servicio no instalado en este servidor'
+    : undefined;
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -44,7 +55,7 @@ export function ActionButtons({ status, isAdmin, busy, onAction }: ActionButtons
         // Deshabilitado si ya esta activo: systemctl start seria un no-op.
         disabled={disabled || status === 'active'}
         className={`${BASE} bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-emerald-600`}
-        title="systemctl start"
+        title={actionTitle || 'systemctl start'}
       >
         Iniciar
       </button>
@@ -54,7 +65,7 @@ export function ActionButtons({ status, isAdmin, busy, onAction }: ActionButtons
         onClick={() => onAction('stop')}
         disabled={disabled || status === 'inactive'}
         className={`${BASE} bg-red-600 hover:bg-red-700 focus-visible:outline-red-600`}
-        title="systemctl stop"
+        title={actionTitle || 'systemctl stop'}
       >
         Detener
       </button>
@@ -64,7 +75,7 @@ export function ActionButtons({ status, isAdmin, busy, onAction }: ActionButtons
         onClick={() => onAction('restart')}
         disabled={disabled}
         className={`${BASE} bg-amber-500 hover:bg-amber-600 focus-visible:outline-amber-500`}
-        title="systemctl restart"
+        title={actionTitle || 'systemctl restart'}
       >
         Reiniciar
       </button>

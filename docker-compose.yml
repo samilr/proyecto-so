@@ -30,9 +30,9 @@ services:
       #  MONTAJE (su propio arbol de directorios). Por eso, por defecto, dentro
       #  del contenedor no existe forma de ver ni tocar el systemd del host.
       #
-      #  Estos dos bind mounts insertan en el namespace de montaje del
-      #  contenedor los sockets UNIX por los que systemd del HOST escucha:
-      #    - /run/systemd                    -> sockets de control de systemd
+      #  Estos bind mounts insertan en el namespace de montaje del contenedor
+      #  el bus del sistema y el marcador que necesita el cliente systemctl:
+      #    - /run/systemd/system             -> marcador de host con systemd
       #    - /var/run/dbus/system_bus_socket -> bus del sistema (D-Bus)
       #
       #  El cliente `systemctl` de dentro del contenedor se conecta a ellos y
@@ -40,18 +40,23 @@ services:
       #  (su PID 1). El aislamiento se mantiene en todo lo demas: solo se abre
       #  este canal concreto y controlado.
       # ---------------------------------------------------------------------
-      - /run/systemd:/run/systemd
-      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+      - /run/systemd/system:/run/systemd/system:ro
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
       # Volumen nombrado: la base de datos sobrevive a `docker compose down` y
       # a la reconstruccion de la imagen (la capa de escritura del contenedor,
       # en cambio, es efimera).
       - panel-data:/data
-    cap_add:
-      # SYS_ADMIN: capability necesaria para que las operaciones de gestion
-      # sobre el systemd del host sean aceptadas. Las capabilities dividen los
-      # privilegios de root en permisos concretos: se concede solo esta en vez
-      # de usar --privileged (que daria TODAS y romperia el aislamiento).
-      - SYS_ADMIN
+    # systemctl solo abre los sockets UNIX anteriores. La autorizacion la hace
+    # polkit segun el UID del cliente, no mediante capabilities del proceso.
+    # El backend conserva UID 0 para autenticarse ante polkit, pero no recibe
+    # ninguna capability del kernel (en particular, no recibe SYS_ADMIN).
+    cap_drop:
+      - ALL
+    security_opt:
+      # docker-default bloquea incluso el saludo inicial con el bus del host.
+      # Este perfil conserva sus restricciones y solo permite D-Bus hacia el
+      # broker y org.freedesktop.systemd1. deploy/install.sh lo instala.
+      - apparmor=panel-web-backend
 
   # ===========================================================================
   #  FRONTEND — React + Vite compilado y servido por Nginx.
@@ -74,8 +79,9 @@ services:
     container_name: panel-frontend
     restart: unless-stopped
     ports:
-      # El panel queda accesible en http://<IP-del-host>/ (puerto 80).
-      - "80:80"
+      # El panel usa 8080 para dejar libre el puerto 80 al nginx del HOST,
+      # que es uno de los servicios administrados durante la demostracion.
+      - "8080:80"
     depends_on:
       # Solo controla el ORDEN DE ARRANQUE, no espera a que el backend este
       # listo. No es problema: Nginx arranca igual y las primeras peticiones

@@ -9,7 +9,8 @@
 #    2. Copia el proyecto a /opt/panel-web  (convencion FHS para software
 #       instalado a mano, fuera de los paquetes de la distribucion).
 #    3. Crea backend/.env con un JWT_SECRET aleatorio si aun no existe.
-#    4. Instala y habilita panel-web.service.
+#    4. Instala el perfil AppArmor minimo para D-Bus/systemd.
+#    5. Instala y habilita panel-web.service.
 #
 #  Es IDEMPOTENTE: se puede volver a ejecutar para actualizar el codigo sin
 #  perder el .env ni la base de datos (que vive en el volumen panel-data).
@@ -19,6 +20,8 @@ set -euo pipefail
 INSTALL_DIR="/opt/panel-web"
 UNIT_NAME="panel-web.service"
 UNIT_DIR="/etc/systemd/system"
+APPARMOR_PROFILE="panel-web-backend"
+APPARMOR_DIR="/etc/apparmor.d"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -46,6 +49,7 @@ info "Comprobando requisitos del sistema..."
 [ -d /run/systemd/system ] || fail "Este sistema no usa systemd como init. El panel requiere Ubuntu/Debian con systemd."
 
 command -v docker >/dev/null 2>&1 || fail "Docker no esta instalado. Instalalo con:  sudo apt install docker.io"
+command -v apparmor_parser >/dev/null 2>&1 || fail "AppArmor no esta instalado. Instalalo con:  sudo apt install apparmor"
 
 # Compose v2 es un subcomando de docker, no el binario docker-compose de v1.
 docker compose version >/dev/null 2>&1 || fail "No se encontro Docker Compose v2. Instalalo con:  sudo apt install docker-compose-plugin"
@@ -106,7 +110,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Instalar la unit de systemd
+# 4. Instalar el perfil AppArmor del backend
+# ---------------------------------------------------------------------------
+info "Instalando el perfil AppArmor $APPARMOR_PROFILE ..."
+install -m 644 "$SCRIPT_DIR/apparmor.d/$APPARMOR_PROFILE" "$APPARMOR_DIR/$APPARMOR_PROFILE"
+apparmor_parser -r -W "$APPARMOR_DIR/$APPARMOR_PROFILE"
+ok "Perfil AppArmor cargado: D-Bus limitado a systemd y sin capabilities Linux."
+
+# ---------------------------------------------------------------------------
+# 5. Instalar la unit de systemd
 # ---------------------------------------------------------------------------
 info "Instalando $UNIT_NAME ..."
 install -m 644 "$SCRIPT_DIR/$UNIT_NAME" "$UNIT_DIR/$UNIT_NAME"
@@ -129,7 +141,7 @@ echo
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 ok "Instalacion completada."
 echo
-echo "  Panel:     http://${IP:-<IP-del-host>}/"
+echo "  Panel:     http://${IP:-<IP-del-host>}:8080/"
 echo "  API:       http://${IP:-<IP-del-host>}:8000/api/health"
 echo "  Usuarios:  admin / Admin2026!     viewer / Viewer2026!"
 echo

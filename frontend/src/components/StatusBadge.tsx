@@ -64,18 +64,34 @@ const STATUS_CONFIG: Record<ServiceState, StatusConfig> = {
 
 interface StatusBadgeProps {
   status: ServiceState;
+  /** true cuando systemd responde LoadState=not-found. */
+  notInstalled?: boolean;
   /** SubState de systemd (running, dead, exited...): detalle fino opcional. */
   subState?: string | null;
 }
 
-export function StatusBadge({ status, subState }: StatusBadgeProps) {
+export function StatusBadge({ status, notInstalled = false, subState }: StatusBadgeProps) {
   // Fallback defensivo: si el backend anadiera un estado nuevo, no se rompe.
-  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+  const config = notInstalled
+    ? {
+        label: 'No instalado',
+        badge:
+          'bg-orange-100 text-orange-800 ring-orange-600/20 dark:bg-orange-950 dark:text-orange-300 dark:ring-orange-400/30',
+        dot: 'bg-orange-500 text-orange-500',
+        pulse: false,
+      }
+    : STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
 
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${config.badge}`}
-      title={subState ? `systemd SubState: ${subState}` : undefined}
+      title={
+        notInstalled
+          ? 'systemd no encontro esta unidad en el servidor'
+          : subState
+            ? `systemd SubState: ${subState}`
+            : undefined
+      }
     >
       <span className="relative flex h-2 w-2 shrink-0">
         {config.pulse && (

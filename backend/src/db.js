@@ -54,7 +54,45 @@ function createSchema() {
 
     -- La bitacora se consulta siempre ordenada por fecha descendente.
     CREATE INDEX IF NOT EXISTS idx_audit_log_id_desc ON audit_log (id DESC);
+
+    CREATE TABLE IF NOT EXISTS managed_services (
+      name       TEXT PRIMARY KEY,
+      position   INTEGER NOT NULL,
+      added_by   TEXT NOT NULL,
+      added_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
+}
+
+/**
+ * Migra ALLOWED_SERVICES a SQLite una sola vez. El marcador separado permite
+ * que un administrador quite todos los servicios sin que reaparezcan al
+ * reiniciar el contenedor.
+ */
+function seedManagedServices() {
+  const initialized = db
+    .prepare("SELECT value FROM app_meta WHERE key = 'managed_services_initialized'")
+    .get();
+  if (initialized) return;
+
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO managed_services (name, position, added_by) VALUES (?, ?, ?)'
+  );
+  const markInitialized = db.prepare(
+    "INSERT INTO app_meta (key, value) VALUES ('managed_services_initialized', '1')"
+  );
+
+  db.transaction(() => {
+    config.initialServices.forEach((name, position) => {
+      insert.run(name, position, 'environment');
+    });
+    markInitialized.run();
+  })();
 }
 
 /**
@@ -88,6 +126,7 @@ function seedUsers() {
 export function initDb() {
   createSchema();
   seedUsers();
+  seedManagedServices();
   console.log(`[db] SQLite listo en ${config.dbPath}`);
 }
 
@@ -99,6 +138,38 @@ export function findUserByUsername(username) {
   return db
     .prepare('SELECT id, username, password_hash, role FROM users WHERE username = ?')
     .get(username);
+}
+
+/** Lista blanca dinamica, en el mismo orden en que se agregaron servicios. */
+export function listManagedServiceNames() {
+  return db
+    .prepare('SELECT name FROM managed_services ORDER BY position ASC, name ASC')
+    .all()
+    .map((row) => row.name);
+}
+
+export function isManagedService(name) {
+  return Boolean(
+    db.prepare('SELECT 1 FROM managed_services WHERE name = ?').get(name)
+  );
+}
+
+/** @returns {boolean} false si ya existia en la lista. */
+export function addManagedService(name, username) {
+  const next = db
+    .prepare('SELECT COALESCE(MAX(position), -1) + 1 AS position FROM managed_services')
+    .get().position;
+  const result = db
+    .prepare(
+      'INSERT OR IGNORE INTO managed_services (name, position, added_by) VALUES (?, ?, ?)'
+    )
+    .run(name, next, username);
+  return result.changes === 1;
+}
+
+/** @returns {boolean} false si el servicio ya no estaba administrado. */
+export function removeManagedService(name) {
+  return db.prepare('DELETE FROM managed_services WHERE name = ?').run(name).changes === 1;
 }
 
 /**
@@ -145,6 +216,28 @@ export function listAuditLogs(limit, offset) {
       service: row.service ?? null,
       // SQLite no tiene BOOLEAN: se guarda 0/1 y se convierte aqui para
       // cumplir el contrato de la API (success: true | false).
+      success: row.success === 1,
+      detail: row.detail ?? null,
+      timestamp: toIso(row.timestamp),
+    }));
+}
+
+/** Ultimos comandos de control ejecutados sobre un servicio concreto. */
+export function listServiceAuditLogs(service, limit = 20) {
+  return db
+    .prepare(
+      `SELECT id, username, action, service, success, detail, timestamp
+       FROM audit_log
+       WHERE service = ? AND action IN ('start', 'stop', 'restart')
+       ORDER BY id DESC
+       LIMIT ?`
+    )
+    .all(service, limit)
+    .map((row) => ({
+      id: row.id,
+      username: row.username,
+      action: row.action,
+      command: `systemctl ${row.action} ${row.service}`,
       success: row.success === 1,
       detail: row.detail ?? null,
       timestamp: toIso(row.timestamp),

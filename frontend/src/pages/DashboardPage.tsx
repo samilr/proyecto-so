@@ -17,6 +17,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ServiceTable } from '../components/ServiceTable';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { AddServiceModal } from '../components/AddServiceModal';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useServices } from '../hooks/useServices';
@@ -47,6 +48,11 @@ export function DashboardPage() {
 
   const [busyService, setBusyService] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [removeCandidate, setRemoveCandidate] = useState<ServiceStatus | null>(null);
+  const [removingService, setRemovingService] = useState<string | null>(null);
 
   const activeCount = useMemo(
     () => services.filter((s) => s.status === 'active').length,
@@ -96,6 +102,56 @@ export function DashboardPage() {
     [runAction]
   );
 
+  const addService = useCallback(
+    async (name: string) => {
+      setAdding(true);
+      setAddError(null);
+      setPaused(true);
+      try {
+        const result = await api.addService(name);
+        setAddOpen(false);
+        showToast('success', `${result.service.name} agregado al panel.`);
+        await refresh();
+      } catch (err) {
+        setAddError(
+          err instanceof ApiRequestError
+            ? err.message
+            : 'No se pudo agregar el servicio.'
+        );
+      } finally {
+        setAdding(false);
+        setPaused(false);
+      }
+    },
+    [refresh, setPaused, showToast]
+  );
+
+  const removeService = useCallback(
+    async (service: ServiceStatus) => {
+      setRemovingService(service.name);
+      setPaused(true);
+      try {
+        await api.removeService(service.name);
+        showToast(
+          'success',
+          `${service.name} fue quitado del panel; el servicio sigue instalado.`
+        );
+        await refresh();
+      } catch (err) {
+        showToast(
+          'error',
+          err instanceof ApiRequestError
+            ? err.message
+            : 'No se pudo quitar el servicio del panel.'
+        );
+      } finally {
+        setRemovingService(null);
+        setPaused(false);
+      }
+    },
+    [refresh, setPaused, showToast]
+  );
+
   const confirmText =
     pending?.action === 'stop'
       ? {
@@ -129,7 +185,7 @@ export function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <p className="text-xs text-slate-400 dark:text-slate-500">
             {lastUpdated
               ? `Actualizado ${formatTime(lastUpdated)}`
@@ -144,6 +200,19 @@ export function DashboardPage() {
           >
             Actualizar
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setAddError(null);
+                setAddOpen(true);
+              }}
+              disabled={adding || removingService !== null || busyService !== null}
+              className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:opacity-50"
+            >
+              + Agregar servicio
+            </button>
+          )}
         </div>
       </div>
 
@@ -163,8 +232,9 @@ export function DashboardPage() {
         isAdmin={isAdmin}
         loading={loading}
         error={error}
-        busyService={busyService}
+        busyService={busyService ?? removingService}
         onAction={handleAction}
+        onRemove={setRemoveCandidate}
       />
 
       {!isAdmin && (
@@ -186,6 +256,35 @@ export function DashboardPage() {
             const { service, action } = pending;
             setPending(null);
             void runAction(service, action);
+          }}
+        />
+      )}
+
+      <AddServiceModal
+        open={addOpen}
+        loading={adding}
+        error={addError}
+        onCancel={() => {
+          if (!adding) {
+            setAddOpen(false);
+            setAddError(null);
+          }
+        }}
+        onSubmit={(name) => void addService(name)}
+      />
+
+      {removeCandidate && (
+        <ConfirmModal
+          open
+          title={`¿Quitar ${removeCandidate.name} del panel?`}
+          message="Se eliminara de la lista administrable y dejara de aparecer aqui. El servicio no sera detenido ni desinstalado del servidor."
+          confirmLabel="Quitar del panel"
+          tone="danger"
+          onCancel={() => setRemoveCandidate(null)}
+          onConfirm={() => {
+            const service = removeCandidate;
+            setRemoveCandidate(null);
+            void removeService(service);
           }}
         />
       )}

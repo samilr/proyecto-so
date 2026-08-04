@@ -9,7 +9,7 @@ Aplicación web que permite administrar los servicios de un servidor Ubuntu (`ng
 │  NAVEGADOR                                                              │
 │  React 18 + TypeScript + Tailwind · tabla en vivo, polling cada 5 s     │
 └────────────────────────────────┬────────────────────────────────────────┘
-                                 │  HTTP :80
+                                 │  HTTP :8080
 ┌────────────────────────────────▼────────────────────────────────────────┐
 │  CONTENEDOR panel-frontend  ·  Nginx                                    │
 │  Sirve la SPA + proxy inverso /api → http://backend:8000                │
@@ -40,12 +40,12 @@ Documentación detallada por capa:
 | Inicio de sesión | JWT (8 h) + bcrypt, roles `admin` / `viewer` |
 | Tabla con estado en tiempo real (verde/rojo) | `StatusBadge` con los 6 estados de systemd + polling cada 5 s |
 | Botones iniciar / detener / reiniciar | `POST /api/services/:name/{start\|stop\|restart}` |
-| Backend Node.js + Express, API REST en JSON | `backend/src/` — 8 endpoints documentados |
+| Backend Node.js + Express, API REST en JSON | `backend/src/` — endpoints documentados |
 | Ejecutar comandos `systemctl` reales | `backend/src/services/systemctl.js` |
-| Lista blanca contra inyección de comandos | `ALLOWED_SERVICES` + regex `^[a-z0-9@\-\._]+$` |
+| Lista blanca contra inyección de comandos | SQLite dinámica + regex `^[a-z0-9@\-\._]+$` |
 | Autenticación con JWT | `middleware/auth.js` + `middleware/requireAdmin.js` |
 | Log de auditoría de cada acción | Tabla `audit_log` en SQLite + pantalla `/logs` |
-| Restricción de permisos a nivel de SO | Contenedor con `cap_add: SYS_ADMIN` (no `--privileged`) + polkit — ver §4 |
+| Restricción de permisos a nivel de SO | Backend sin capabilities Linux (`cap_drop: ALL`) + AppArmor limitado a D-Bus/systemd + polkit — ver §4 |
 | La aplicación instalada como servicio systemd | [`deploy/panel-web.service`](deploy/panel-web.service) — ver §3 |
 
 ### Una desviación deliberada: `execFile` en lugar de `exec`
@@ -77,14 +77,15 @@ cd proyecto-final-so
 
 cp backend/.env.example backend/.env
 openssl rand -hex 32                  # pegar el resultado en JWT_SECRET
-nano backend/.env                     # revisar también ALLOWED_SERVICES
+nano backend/.env                     # JWT_SECRET y lista inicial de servicios
 
+sudo apparmor_parser -r -W deploy/apparmor.d/panel-web-backend
 docker compose up -d --build
 ```
 
 | URL | Contenido |
 |---|---|
-| `http://<IP-del-host>/` | El panel |
+| `http://<IP-del-host>:8080/` | El panel |
 | `http://<IP-del-host>:8000/api/health` | La API directa (para depurar con `curl`) |
 
 | Usuario | Contraseña | Rol |
@@ -134,7 +135,7 @@ journalctl -u panel-web -f          # logs en el journal del sistema
 | `RemainAfterExit=yes` | Sin esto la unit quedaría «inactive» al instante y `stop` no ejecutaría `ExecStop` |
 | `WantedBy=multi-user.target` | El *runlevel* de un servidor sin entorno gráfico: arranque automático en cada boot |
 
-> **Detalle circular con buen efecto en la demostración:** añade `panel-web` a `ALLOWED_SERVICES` y el panel aparecerá en su propia tabla, administrándose a sí mismo. Detenerse desde su propia interfaz apaga el panel — una ilustración muy directa de por qué existe la lista blanca.
+> **Lista dinámica:** un administrador puede pulsar **Agregar servicio**. El backend valida la unidad contra systemd y la guarda en SQLite sin reiniciar Docker. `ALLOWED_SERVICES` solo sirve para sembrar la lista durante la primera ejecución de una base nueva.
 
 ---
 
@@ -165,15 +166,16 @@ La restricción vive en el **sistema operativo**: aunque la aplicación fuera co
 
 | | sudoers (nativo) | polkit + contenedor (este proyecto) |
 |---|---|---|
-| Dónde se restringe *qué servicios* | Sistema operativo | Aplicación (`ALLOWED_SERVICES`) |
+| Dónde se restringe *qué servicios* | Sistema operativo | Aplicación (lista dinámica en SQLite) |
 | Si la app es comprometida | El SO sigue bloqueando lo no listado | Un atacante con ejecución de código podría tocar otras units |
 | Aislamiento del proceso | Solo permisos de usuario | Namespaces PID/mount/net + cgroups + capabilities |
 | Superficie expuesta al host | Todo el sistema de archivos | Únicamente 2 sockets montados |
 
 **No son equivalentes**, y decirlo es más defendible que afirmar lo contrario: el modelo contenerizado gana en aislamiento del proceso pero mueve la restricción por servicio de la capa del SO a la capa de la aplicación. Las mitigaciones concretas son:
 
-- `cap_add: [SYS_ADMIN]` en lugar de `--privileged` — se concede **una** capability en vez de todas.
-- Solo se montan dos sockets; el resto del sistema de archivos del host es invisible para el contenedor.
+- `cap_drop: [ALL]` — el backend no recibe ninguna capability Linux; `systemctl` solo necesita conectarse a D-Bus.
+- Solo se montan el socket D-Bus y el marcador `/run/systemd/system`, ambos en modo de solo lectura; el resto del sistema de archivos del host es invisible para el contenedor.
+- El perfil `panel-web-backend` conserva el aislamiento AppArmor de Docker y solo permite mensajes D-Bus hacia el broker y `org.freedesktop.systemd1`.
 - Tres capas antes de llegar a `systemctl`: JWT válido → rol `admin` → regex + lista blanca.
 - `execFile` sin shell, con timeout de 10 s.
 - Toda acción, exitosa o fallida, queda en `audit_log` con usuario, servicio y motivo.

@@ -33,6 +33,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { config } from '../config.js';
+import { listManagedServiceNames } from '../db.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 const execFileAsync = promisify(execFile);
@@ -48,6 +49,17 @@ const SHOW_PROPERTIES = [
   'ExecMainStartTimestamp',
   'MemoryCurrent',
   'Description',
+].join(',');
+
+// Metadatos adicionales que solo se consultan al abrir el acordeon de un
+// servicio. Se mantienen fuera del sondeo de 5 s para que la tabla principal
+// siga siendo ligera.
+const DETAIL_PROPERTIES = [
+  'UnitFileState',
+  'FragmentPath',
+  'Type',
+  'Restart',
+  'ExecStart',
 ].join(',');
 
 const VALID_STATES = ['active', 'inactive', 'failed', 'activating', 'deactivating'];
@@ -143,6 +155,7 @@ export async function getServiceStatus(name) {
     return {
       name,
       description: null,
+      loadState: null,
       status: 'unknown',
       subState: null,
       pid: null,
@@ -173,6 +186,9 @@ export async function getServiceStatus(name) {
   return {
     name,
     description: props.Description || null,
+    // Se expone para que el frontend distinga una unidad inexistente de un
+    // fallo al consultar el bus (ambos usan status="unknown").
+    loadState: props.LoadState || null,
     status,
     subState: notFound ? null : props.SubState || null,
     pid: notFound ? null : parsePid(props.MainPID),
@@ -189,7 +205,52 @@ export async function getServiceStatus(name) {
  * no puede fallar por un servicio suelto.
  */
 export async function listServices() {
-  return Promise.all(config.allowedServices.map((name) => getServiceStatus(name)));
+  return Promise.all(listManagedServiceNames().map((name) => getServiceStatus(name)));
+}
+
+/**
+ * Estado y metadatos tecnicos de una unidad para el acordeon de detalles.
+ * La salida sigue siendo una lista fija de propiedades: nunca se acepta un
+ * argumento systemctl enviado libremente por el navegador.
+ */
+export async function getServiceDetails(name) {
+  const service = await getServiceStatus(name);
+
+  try {
+    const { stdout } = await runSystemctl([
+      'show',
+      name,
+      `--property=${DETAIL_PROPERTIES}`,
+      '--no-pager',
+    ]);
+    const props = parseShowOutput(stdout);
+
+    return {
+      service,
+      metadata: {
+        unitFileState: props.UnitFileState || null,
+        unitPath: props.FragmentPath || null,
+        serviceType: props.Type || null,
+        restartPolicy: props.Restart || null,
+        execStart: props.ExecStart || null,
+      },
+    };
+  } catch (err) {
+    console.error(
+      `[systemctl] detalles de ${name} fallaron:`,
+      (err.stderr || err.message || '').trim()
+    );
+    return {
+      service,
+      metadata: {
+        unitFileState: null,
+        unitPath: null,
+        serviceType: null,
+        restartPolicy: null,
+        execStart: null,
+      },
+    };
+  }
 }
 
 /**

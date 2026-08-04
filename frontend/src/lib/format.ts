@@ -72,6 +72,8 @@ export const ACTION_LABELS: Record<string, string> = {
   stop: 'Detener',
   restart: 'Reiniciar',
   login: 'Inicio de sesion',
+  add_service: 'Agregar servicio',
+  remove_service: 'Quitar servicio',
 };
 
 /** Participio para los mensajes de exito: "nginx reiniciado correctamente". */

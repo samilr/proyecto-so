@@ -12,7 +12,7 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
-import { initDb, closeDb } from './db.js';
+import { initDb, closeDb, listManagedServiceNames } from './db.js';
 import { authRouter } from './routes/auth.routes.js';
 import { servicesRouter } from './routes/services.routes.js';
 import { logsRouter } from './routes/logs.routes.js';
@@ -40,7 +40,7 @@ app.disable('x-powered-by');
 app.use(
   cors({
     origin: config.corsOrigin,
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
@@ -87,7 +87,7 @@ app.use(errorHandler);
 const server = app.listen(config.port, '0.0.0.0', () => {
   console.log('----------------------------------------------------------');
   console.log(`  Panel de Servicios Systemd — backend escuchando en :${config.port}`);
-  console.log(`  Servicios en lista blanca: ${config.allowedServices.join(', ') || '(ninguno)'}`);
+  console.log(`  Servicios administrados: ${listManagedServiceNames().join(', ') || '(ninguno)'}`);
   console.log(`  Base de datos: ${config.dbPath}`);
   console.log(`  CORS permitido para: ${config.corsOrigin}`);
   console.log('----------------------------------------------------------');

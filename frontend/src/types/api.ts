@@ -29,9 +29,11 @@ export interface LoginResponse {
 
 export interface ServiceStatus {
   name: string;
-  description: string;
+  description: string | null;
+  /** Estado de carga de systemd; "not-found" significa unidad no instalada. */
+  loadState: string | null;
   status: ServiceState;
-  subState: string;
+  subState: string | null;
   pid: number | null;
   uptimeSeconds: number | null;
   memoryBytes: number | null;
@@ -41,16 +43,52 @@ export interface ServicesResponse {
   services: ServiceStatus[];
 }
 
+export interface AddServiceResponse {
+  service: ServiceStatus;
+  addedAt: string;
+}
+
+export interface RemoveServiceResponse {
+  removed: string;
+  removedAt: string;
+}
+
 export interface ActionResponse {
   action: ServiceAction;
+  command: string;
   service: ServiceStatus; // estado DESPUES de la accion
   executedAt: string; // ISO 8601
+}
+
+export interface ServiceMetadata {
+  unitFileState: string | null;
+  unitPath: string | null;
+  serviceType: string | null;
+  restartPolicy: string | null;
+  execStart: string | null;
+}
+
+export interface ServiceCommandEntry {
+  id: number;
+  username: string;
+  action: ServiceAction;
+  command: string;
+  success: boolean;
+  detail: string | null;
+  timestamp: string;
+}
+
+export interface ServiceDetailsResponse {
+  service: ServiceStatus;
+  metadata: ServiceMetadata;
+  canViewCommands: boolean;
+  commands: ServiceCommandEntry[];
 }
 
 export interface AuditLogEntry {
   id: number;
   username: string;
-  action: ServiceAction | 'login';
+  action: ServiceAction | 'login' | 'add_service' | 'remove_service';
   service: string | null;
   success: boolean;
   detail: string | null;
@@ -75,6 +113,9 @@ export type ApiErrorCode =
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
   | 'SERVICE_NOT_ALLOWED'
+  | 'SERVICE_ALREADY_MANAGED'
+  | 'SERVICE_NOT_INSTALLED'
+  | 'SERVICE_UNAVAILABLE'
   | 'INVALID_SERVICE_NAME'
   | 'SYSTEMCTL_ERROR'
   | 'RATE_LIMITED'

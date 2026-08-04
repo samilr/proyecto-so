@@ -38,8 +38,8 @@ if (!JWT_SECRET || JWT_SECRET.trim() === '') {
   process.exit(1);
 }
 
-// Lista blanca: se parsea una sola vez al arrancar. Los nombres vacios se
-// descartan para tolerar comas sobrantes en el .env (ej: "nginx,ssh,").
+// Lista inicial: solo se usa la primera vez que arranca una base de datos.
+// Desde entonces la lista blanca se administra en SQLite desde el panel.
 const ALLOWED_SERVICES = (process.env.ALLOWED_SERVICES || '')
   .split(',')
   .map(normalizeServiceName)
@@ -47,7 +47,7 @@ const ALLOWED_SERVICES = (process.env.ALLOWED_SERVICES || '')
 
 if (ALLOWED_SERVICES.length === 0) {
   console.warn(
-    '[WARN] ALLOWED_SERVICES esta vacia: el panel no expondra ningun servicio.'
+    '[WARN] ALLOWED_SERVICES esta vacia: una base nueva comenzara sin servicios.'
   );
 }
 
@@ -55,15 +55,10 @@ export const config = {
   port: Number(process.env.PORT) || 8000,
   jwtSecret: JWT_SECRET,
   jwtExpires: process.env.JWT_EXPIRES || '8h',
-  allowedServices: ALLOWED_SERVICES,
+  initialServices: ALLOWED_SERVICES,
   dbPath: process.env.DB_PATH || '/data/panel.db',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   // Timeout duro para cada invocacion de systemctl (ms). Evita que una unidad
   // colgada bloquee un worker de Node indefinidamente.
   execTimeoutMs: 10_000,
 };
-
-/** true si el servicio (normalizado) esta en la lista blanca. */
-export function isServiceAllowed(name) {
-  return config.allowedServices.includes(normalizeServiceName(name));
-}

@@ -12,11 +12,11 @@ Este diagrama es el que resume el proyecto entero: desde un clic en el navegador
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  NAVEGADOR  (http://<IP-del-host>/)                                      │
+│  NAVEGADOR  (http://<IP-del-host>:8080/)                                 │
 │  React SPA — clic en "Reiniciar nginx"                                   │
 │  fetch('/api/services/nginx/restart')   ← ruta RELATIVA, mismo origen    │
 └───────────────────────────────┬──────────────────────────────────────────┘
-                                │ HTTP :80
+                                │ HTTP :8080
 ┌───────────────────────────────▼──────────────────────────────────────────┐
 │  CONTENEDOR  panel-frontend   (nginx:1.27-alpine)                        │
 │                                                                          │
@@ -113,8 +113,8 @@ docker compose up -d --build
 
 | URL | Sirve |
 |---|---|
-| `http://<IP-del-host>/` | El panel (Nginx) |
-| `http://<IP-del-host>/api/health` | La API, a través del proxy |
+| `http://<IP-del-host>:8080/` | El panel (Nginx) |
+| `http://<IP-del-host>:8080/api/health` | La API, a través del proxy |
 | `http://<IP-del-host>:8000/api/health` | La API directa (solo para depurar con `curl`) |
 
 ### Comandos útiles
@@ -198,12 +198,12 @@ frontend/
 
 ## 6. Checklist de humo (verificación final)
 
-Ejecutar en el host Ubuntu, con `nginx` instalado y en `ALLOWED_SERVICES`:
+Ejecutar en el host Ubuntu, con `nginx` instalado y agregado al panel:
 
 | # | Paso | Resultado esperado |
 |---|---|---|
 | 1 | `docker compose up -d --build` | Ambos contenedores en `Up`; `docker compose ps` los muestra `healthy` |
-| 2 | Abrir `http://<IP-del-host>` | Carga la pantalla de login servida por Nginx |
+| 2 | Abrir `http://<IP-del-host>:8080` | Carga la pantalla de login servida por Nginx |
 | 3 | Login como `admin` / `Admin2026!` | Dashboard con los servicios **reales** del host y sus PID/uptime/memoria |
 | 4 | Pulsar **Reiniciar** en `nginx` y confirmar | Spinner en la fila → toast verde "nginx reiniciado correctamente" → el PID cambia y el uptime vuelve a 0 |
 | 5 | Detener `nginx` desde el panel | El badge pasa a gris "Inactivo"; `systemctl status nginx` en el host lo confirma |

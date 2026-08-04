@@ -1,6 +1,7 @@
 /**
  * ServiceTable.tsx — Tabla de servicios con sus estados de carga/error/vacio.
  */
+import { useState } from 'react';
 import { ServiceRow } from './ServiceRow';
 import type { ServiceAction, ServiceStatus } from '../types/api';
 
@@ -12,6 +13,7 @@ interface ServiceTableProps {
   /** Nombre del servicio con una accion en curso, o null. */
   busyService: string | null;
   onAction: (service: ServiceStatus, action: ServiceAction) => void;
+  onRemove: (service: ServiceStatus) => void;
 }
 
 /** Esqueleto de carga: da sensacion de rapidez en el primer render. */
@@ -36,8 +38,10 @@ export function ServiceTable({
   error,
   busyService,
   onAction,
+  onRemove,
 }: ServiceTableProps) {
   const showEmpty = !loading && !error && services.length === 0;
+  const [expandedService, setExpandedService] = useState<string | null>(null);
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -76,9 +80,8 @@ export function ServiceTable({
                   colSpan={6}
                   className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400"
                 >
-                  No hay servicios en la lista blanca. Defina{' '}
-                  <code className="font-mono text-xs">ALLOWED_SERVICES</code> en el{' '}
-                  <code className="font-mono text-xs">.env</code> del backend.
+                  No hay servicios administrados. Un administrador puede usar{' '}
+                  <strong>Agregar servicio</strong> para comenzar.
                 </td>
               </tr>
             )}
@@ -89,7 +92,14 @@ export function ServiceTable({
                 service={service}
                 isAdmin={isAdmin}
                 busy={busyService === service.name}
+                expanded={expandedService === service.name}
+                onToggleDetails={() =>
+                  setExpandedService((current) =>
+                    current === service.name ? null : service.name
+                  )
+                }
                 onAction={onAction}
+                onRemove={() => onRemove(service)}
               />
             ))}
           </tbody>

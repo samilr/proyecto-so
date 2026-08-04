@@ -32,7 +32,7 @@ cp backend/.env.example backend/.env
 # 3. Generar un JWT_SECRET real y pegarlo en backend/.env
 openssl rand -hex 32
 
-# 4. Editar backend/.env: JWT_SECRET y ALLOWED_SERVICES
+# 4. Editar backend/.env: JWT_SECRET y servicios iniciales
 nano backend/.env
 
 # 5. Construir y levantar
@@ -50,7 +50,7 @@ curl http://localhost:8000/api/health
 | `PORT` | `8000` | Puerto de escucha dentro del contenedor |
 | `JWT_SECRET` | — | **Obligatoria.** Sin ella el proceso no arranca (fail-fast) |
 | `JWT_EXPIRES` | `8h` | Vigencia del token |
-| `ALLOWED_SERVICES` | `nginx,mysql,ssh,cron` | Lista blanca separada por comas |
+| `ALLOWED_SERVICES` | `nginx,mysql,ssh,cron` | Semilla inicial; luego se administra desde el panel y persiste en SQLite |
 | `DB_PATH` | `/data/panel.db` | Archivo SQLite (dentro del volumen `panel-data`) |
 | `CORS_ORIGIN` | `http://localhost:5173` | Origen permitido (Vite en desarrollo) |
 
@@ -101,11 +101,11 @@ Un socket UNIX es un **archivo especial** del sistema de archivos. Y los archivo
 
 ```yaml
 volumes:
-  - /run/systemd:/run/systemd
-  - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+  - /run/systemd/system:/run/systemd/system:ro
+  - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
 ```
 
-Con esos dos montajes, el namespace de montaje del contenedor incluye los sockets **del host**. Entonces:
+Con esos montajes, el namespace de montaje del contenedor incluye el bus **del host** y el directorio que `systemctl` usa para comprobar que el host arrancó con systemd. El perfil AppArmor `panel-web-backend` permite mensajes solo hacia el broker D-Bus y `org.freedesktop.systemd1`. Entonces:
 
 1. Node ejecuta `execFile('systemctl', ['restart', 'nginx'])`.
 2. El `systemctl` de la imagen (instalado solo por el binario cliente) abre `/var/run/dbus/system_bus_socket`, que **es el socket del host**.
@@ -115,9 +115,10 @@ Con esos dos montajes, el namespace de montaje del contenedor incluye los socket
 
 Es la misma idea que montar `/var/run/docker.sock` para controlar Docker desde dentro de un contenedor: no se elimina el aislamiento, se abre **un único canal explícito** hacia un servicio del host.
 
-### 3.4 ¿Por qué `cap_add: SYS_ADMIN` y root, y por qué no `sudo`?
+### 3.4 ¿Por qué `cap_drop: ALL` y root, y por qué no `sudo`?
 
-- Linux divide los privilegios de root en **capabilities** (permisos atómicos). Docker por defecto quita la mayoría. `CAP_SYS_ADMIN` es la que habilita las operaciones administrativas necesarias para que este canal funcione. Se concede **solo esa**, en lugar de `--privileged`, que las daría todas y anularía buena parte del aislamiento.
+- Linux divide los privilegios de root en **capabilities** (permisos atómicos). Abrir un socket UNIX propio y enviar mensajes D-Bus no requiere ninguna capability, por lo que el backend usa `cap_drop: ALL`. En particular, no recibe `CAP_SYS_ADMIN`, una capability muy amplia que no participa en la autorización de polkit.
+- El perfil AppArmor `panel-web-backend` parte del aislamiento predeterminado de Docker y agrega únicamente mensajes con el broker D-Bus y `org.freedesktop.systemd1`; no se usa `apparmor=unconfined`.
 - El proceso corre como **root dentro del contenedor**. Cuando se conecta al D-Bus del sistema, **polkit** del host ve un cliente con UID 0 y autoriza `StartUnit`/`StopUnit`/`RestartUnit` sin pedir contraseña.
 - Por eso **no se usa `sudo`** dentro del contenedor: ya se es root, y `sudo` requeriría un TTY o una configuración de `sudoers` que no aporta nada aquí.
 
@@ -144,7 +145,10 @@ Base URL: `http://localhost:8000`
 | `GET` | `/api/health` | — | Estado del proceso |
 | `POST` | `/api/auth/login` | — | Login, devuelve JWT (máx. 5 intentos/IP/min) |
 | `GET` | `/api/services` | JWT | Estado de todos los servicios de la lista blanca |
+| `POST` | `/api/services` | JWT + admin | Validar y agregar un servicio instalado |
 | `GET` | `/api/services/:name` | JWT | Estado de un servicio |
+| `GET` | `/api/services/:name/details` | JWT | Metadatos systemd e historial de comandos (historial solo admin) |
+| `DELETE` | `/api/services/:name` | JWT + admin | Quitar del panel sin detener ni desinstalar |
 | `POST` | `/api/services/:name/start` | JWT + admin | Iniciar servicio |
 | `POST` | `/api/services/:name/stop` | JWT + admin | Detener servicio |
 | `POST` | `/api/services/:name/restart` | JWT + admin | Reiniciar servicio |
@@ -161,7 +165,10 @@ Base URL: `http://localhost:8000`
 | `INVALID_CREDENTIALS` | 401 | Usuario o contraseña incorrectos |
 | `UNAUTHORIZED` | 401 | Token ausente, inválido o expirado |
 | `FORBIDDEN` | 403 | Rol insuficiente (se requiere admin) |
-| `SERVICE_NOT_ALLOWED` | 403 | Servicio fuera de `ALLOWED_SERVICES` |
+| `SERVICE_NOT_ALLOWED` | 403 | Servicio fuera de la lista blanca dinámica |
+| `SERVICE_ALREADY_MANAGED` | 409 | El servicio ya aparece en el panel |
+| `SERVICE_NOT_INSTALLED` | 404 | systemd no encontró la unidad solicitada |
+| `SERVICE_UNAVAILABLE` | 409 | La unidad está enmascarada y no puede controlarse |
 | `INVALID_SERVICE_NAME` | 400 | El nombre no pasa el regex `^[a-z0-9@\-\._]+$` |
 | `SYSTEMCTL_ERROR` | 500 | `systemctl` falló (el `message` trae su `stderr`) |
 | `RATE_LIMITED` | 429 | Más de 5 intentos de login por IP en un minuto |
@@ -212,6 +219,7 @@ curl http://localhost:8000/api/services -H "Authorization: Bearer $TOKEN"
     {
       "name": "nginx",
       "description": "A high performance web server and a reverse proxy server",
+      "loadState": "loaded",
       "status": "active",
       "subState": "running",
       "pid": 1234,
@@ -223,6 +231,7 @@ curl http://localhost:8000/api/services -H "Authorization: Bearer $TOKEN"
 ```
 
 `status`: `active` | `inactive` | `failed` | `activating` | `deactivating` | `unknown`.
+`loadState`: estado de carga de systemd; `not-found` permite distinguir una unidad no instalada de un error de consulta.
 `pid`, `uptimeSeconds`, `memoryBytes`: `number | null`.
 
 **Un servicio**
@@ -242,7 +251,7 @@ curl -X POST http://localhost:8000/api/services/nginx/restart \
 ```json
 {
   "action": "restart",
-  "service": { "name": "nginx", "status": "active", "subState": "running", "pid": 4821, "uptimeSeconds": 0, "memoryBytes": 3145728, "description": "..." },
+  "service": { "name": "nginx", "description": "...", "loadState": "loaded", "status": "active", "subState": "running", "pid": 4821, "uptimeSeconds": 0, "memoryBytes": 3145728 },
   "executedAt": "2026-08-04T14:30:00.000Z"
 }
 ```
@@ -294,7 +303,7 @@ curl -X POST http://localhost:8000/api/services/nginx/stop -H "Authorization: Be
 
 ## 5. Decisiones de seguridad
 
-1. **Lista blanca (`ALLOWED_SERVICES`)** — el panel solo puede tocar servicios declarados explícitamente. Sin esto, un admin podría detener `systemd-networkd` o `ssh` y dejar el servidor incomunicado.
+1. **Lista blanca dinámica** — el panel solo puede tocar servicios agregados explícitamente por un administrador. Se guarda en SQLite; `ALLOWED_SERVICES` únicamente la inicializa en una instalación nueva.
 2. **Validación por regex** — `^[a-z0-9@\-\._]+$` antes de tocar nada. Rechaza `;`, `|`, `$( )`, backticks, espacios, `../`.
 3. **`execFile` y nunca `exec`** — `execFile` **no lanza un shell**, así que los metacaracteres quedan como texto literal. Con `exec` (que sí abre `/bin/sh`) el nombre del servicio se concatenaría a una línea de comando y habría inyección de comandos. Es la vulnerabilidad clásica de este tipo de paneles.
 4. **Autorización por rol** — leer estado: cualquier usuario autenticado; `start`/`stop`/`restart` y la bitácora: solo `admin`.
@@ -342,7 +351,7 @@ ps -p 1 -o pid,comm
 ps aux | grep "node src/index.js"
 
 # Comprobar que los sockets del host llegaron al contenedor (bind mounts)
-docker compose exec backend ls -l /run/systemd /var/run/dbus/system_bus_socket
+docker compose exec backend ls -ld /run/systemd/system /var/run/dbus/system_bus_socket
 
 # --- Volumen de datos ---
 docker volume ls | grep panel-data
@@ -392,10 +401,10 @@ backend/
 
 | Síntoma | Causa probable | Solución |
 |---|---|---|
-| Todos los servicios en `unknown` | Los sockets del host no están montados o el host no usa systemd | Verificar los `volumes` de `docker-compose.yml` y que exista `/run/systemd` en el host |
+| Todos los servicios en `unknown` | Los sockets del host no están montados o el host no usa systemd | Verificar los `volumes` de `docker-compose.yml` y que exista `/run/systemd/private` en el host |
 | `SYSTEMCTL_ERROR: Failed to connect to bus` | Falta el bind mount del socket D-Bus | Revisar `/var/run/dbus/system_bus_socket` en el host |
-| `SYSTEMCTL_ERROR: Interactive authentication required` | polkit no autoriza al cliente | El contenedor debe correr como root y con `cap_add: SYS_ADMIN` |
-| `Unit nginx.service not found` | El servicio no está instalado en el host | `sudo apt install nginx` o quitarlo de `ALLOWED_SERVICES` |
+| `SYSTEMCTL_ERROR: Interactive authentication required` | polkit no autoriza al cliente | Verificar que el backend conserve UID 0 y que polkit del host autorice la operación; `CAP_SYS_ADMIN` no es necesario |
+| `Unit nginx.service not found` | El servicio no está instalado en el host | `sudo apt install nginx` o quitarlo desde el panel |
 | El contenedor no arranca, log `[FATAL] Falta JWT_SECRET` | `backend/.env` no existe o está incompleto | `cp backend/.env.example backend/.env` y definir el secreto |
 | Cambié el `.env` y no surte efecto | Las variables se leen al arrancar | `docker compose restart backend` |
 | Cambié la contraseña del seed y no se aplica | El seed solo corre con la tabla vacía | `docker compose down -v` (borra todos los datos) |

@@ -9,10 +9,26 @@
 import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { validateServiceName, validateAction, VALID_ACTIONS } from '../utils/validate.js';
-import { listServices, getServiceStatus, controlService } from '../services/systemctl.js';
-import { insertAuditLog } from '../db.js';
+import { asyncHandler, AppError } from '../middleware/errorHandler.js';
+import {
+  validateServiceName,
+  validateServiceNameFormat,
+  validateAction,
+  VALID_ACTIONS,
+} from '../utils/validate.js';
+import {
+  listServices,
+  getServiceStatus,
+  getServiceDetails,
+  controlService,
+} from '../services/systemctl.js';
+import {
+  insertAuditLog,
+  listServiceAuditLogs,
+  isManagedService,
+  addManagedService,
+  removeManagedService,
+} from '../db.js';
 
 export const servicesRouter = Router();
 
@@ -27,6 +43,100 @@ servicesRouter.get(
   asyncHandler(async (req, res) => {
     const services = await listServices();
     res.json({ services });
+  })
+);
+
+/* -------------------------------------------------------------------- */
+/*  POST /api/services — agregar una unidad existente (solo admin)       */
+/* -------------------------------------------------------------------- */
+servicesRouter.post(
+  '/',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const name = validateServiceNameFormat(req.body?.name);
+
+    if (isManagedService(name)) {
+      throw new AppError(
+        409,
+        'SERVICE_ALREADY_MANAGED',
+        `El servicio "${name}" ya aparece en el panel.`
+      );
+    }
+
+    const service = await getServiceStatus(name);
+    if (service.loadState === 'not-found') {
+      throw new AppError(
+        404,
+        'SERVICE_NOT_INSTALLED',
+        `systemd no encontro ${name}.service. Instale el servicio antes de agregarlo.`
+      );
+    }
+    if (service.loadState === 'masked') {
+      throw new AppError(
+        409,
+        'SERVICE_UNAVAILABLE',
+        `El servicio "${name}" esta enmascarado en systemd y no puede controlarse.`
+      );
+    }
+    if (service.loadState !== 'loaded') {
+      throw new AppError(
+        503,
+        'SYSTEMCTL_ERROR',
+        `No se pudo validar "${name}" contra systemd. Intente nuevamente.`
+      );
+    }
+
+    addManagedService(name, req.user.username);
+    insertAuditLog({
+      userId: req.user.id,
+      username: req.user.username,
+      action: 'add_service',
+      service: name,
+      success: true,
+      detail: 'Servicio agregado a la lista blanca dinamica.',
+    });
+
+    res.status(201).json({ service, addedAt: new Date().toISOString() });
+  })
+);
+
+/* -------------------------------------------------------------------- */
+/*  GET /api/services/:name/details — acordeon tecnico + comandos        */
+/* -------------------------------------------------------------------- */
+servicesRouter.get(
+  '/:name/details',
+  asyncHandler(async (req, res) => {
+    const name = validateServiceName(req.params.name);
+    const details = await getServiceDetails(name);
+    // El historial contiene nombres de usuario y por tanto conserva la misma
+    // restriccion que la bitacora general. Un viewer puede inspeccionar los
+    // metadatos tecnicos, pero no la actividad de otros usuarios.
+    const canViewCommands = req.user.role === 'admin';
+    const commands = canViewCommands ? listServiceAuditLogs(name, 20) : [];
+    res.json({ ...details, canViewCommands, commands });
+  })
+);
+
+/* -------------------------------------------------------------------- */
+/*  DELETE /api/services/:name — quitar del panel, no del host           */
+/* -------------------------------------------------------------------- */
+servicesRouter.delete(
+  '/:name',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const name = validateServiceName(req.params.name);
+    removeManagedService(name);
+
+    insertAuditLog({
+      userId: req.user.id,
+      username: req.user.username,
+      action: 'remove_service',
+      service: name,
+      success: true,
+      detail: 'Servicio quitado del panel; no fue detenido ni desinstalado.',
+    });
+
+    res.json({ removed: name, removedAt: new Date().toISOString() });
   })
 );
 
@@ -69,6 +179,7 @@ servicesRouter.post(
 
       res.json({
         action,
+        command: `systemctl ${action} ${name}`,
         service,
         executedAt: new Date().toISOString(),
       });

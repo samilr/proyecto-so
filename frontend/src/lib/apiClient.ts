@@ -11,11 +11,14 @@
  */
 import type {
   ActionResponse,
+  AddServiceResponse,
   ApiError,
   ApiErrorCode,
   LoginResponse,
   LogsResponse,
+  RemoveServiceResponse,
   ServiceAction,
+  ServiceDetailsResponse,
   ServiceStatus,
   ServicesResponse,
 } from '../types/api';
@@ -78,7 +81,7 @@ function isApiError(body: unknown): body is ApiError {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
   /** Peticiones publicas (login) que no deben mandar el header Authorization. */
   skipAuth?: boolean;
@@ -166,10 +169,34 @@ export const api = {
     return request<ServicesResponse>('/api/services', { signal });
   },
 
+  /** POST /api/services — agrega una unidad instalada a la lista dinamica. */
+  addService(name: string): Promise<AddServiceResponse> {
+    return request<AddServiceResponse>('/api/services', {
+      method: 'POST',
+      body: { name },
+    });
+  },
+
+  /** DELETE /api/services/:name — la quita del panel, no del host. */
+  removeService(name: string): Promise<RemoveServiceResponse> {
+    return request<RemoveServiceResponse>(
+      `/api/services/${encodeURIComponent(name)}`,
+      { method: 'DELETE' }
+    );
+  },
+
   /** GET /api/services/:name — cualquier rol autenticado. */
   getService(name: string, signal?: AbortSignal): Promise<{ service: ServiceStatus }> {
     return request<{ service: ServiceStatus }>(
       `/api/services/${encodeURIComponent(name)}`,
+      { signal }
+    );
+  },
+
+  /** GET /api/services/:name/details — metadatos e historial del acordeon. */
+  getServiceDetails(name: string, signal?: AbortSignal): Promise<ServiceDetailsResponse> {
+    return request<ServiceDetailsResponse>(
+      `/api/services/${encodeURIComponent(name)}/details`,
       { signal }
     );
   },

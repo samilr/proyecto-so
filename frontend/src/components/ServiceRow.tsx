@@ -6,6 +6,7 @@
  * columnas siga siendo legible en un telefono.
  */
 import { ActionButtons } from './ActionButtons';
+import { ServiceDetailsPanel } from './ServiceDetailsPanel';
 import { StatusBadge } from './StatusBadge';
 import { formatBytes, formatUptime } from '../lib/format';
 import type { ServiceAction, ServiceStatus } from '../types/api';
@@ -14,7 +15,10 @@ interface ServiceRowProps {
   service: ServiceStatus;
   isAdmin: boolean;
   busy: boolean;
+  expanded: boolean;
+  onToggleDetails: () => void;
   onAction: (service: ServiceStatus, action: ServiceAction) => void;
+  onRemove: () => void;
 }
 
 /** Spinner que aparece en la fila mientras systemctl trabaja. */
@@ -28,8 +32,20 @@ function Spinner() {
   );
 }
 
-export function ServiceRow({ service, isAdmin, busy, onAction }: ServiceRowProps) {
+export function ServiceRow({
+  service,
+  isAdmin,
+  busy,
+  expanded,
+  onToggleDetails,
+  onAction,
+  onRemove,
+}: ServiceRowProps) {
   const handle = (action: ServiceAction) => onAction(service, action);
+  const notInstalled = service.loadState === 'not-found';
+  const description = notInstalled
+    ? `No se encontro ${service.name}.service en este servidor.`
+    : service.description || 'Sin descripcion';
 
   return (
     <>
@@ -43,12 +59,27 @@ export function ServiceRow({ service, isAdmin, busy, onAction }: ServiceRowProps
             {busy && <Spinner />}
           </div>
           <p className="mt-0.5 max-w-xs truncate text-xs text-slate-500 dark:text-slate-400">
-            {/* El backend envia null cuando la unidad no existe en el host. */}
-            {service.description || 'Sin descripcion'}
+            {description}
           </p>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={`details-${service.name}`}
+            onClick={onToggleDetails}
+            className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-400 dark:hover:text-sky-300"
+          >
+            <span aria-hidden="true" className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>
+              ›
+            </span>
+            {expanded ? 'Ocultar detalles' : 'Ver detalles'}
+          </button>
         </td>
         <td className="px-4 py-3">
-          <StatusBadge status={service.status} subState={service.subState} />
+          <StatusBadge
+            status={service.status}
+            notInstalled={notInstalled}
+            subState={service.subState}
+          />
         </td>
         <td className="px-4 py-3 font-mono text-sm text-slate-600 dark:text-slate-300">
           {service.pid ?? '—'}
@@ -63,6 +94,7 @@ export function ServiceRow({ service, isAdmin, busy, onAction }: ServiceRowProps
           <ActionButtons
             status={service.status}
             isAdmin={isAdmin}
+            unavailable={notInstalled}
             busy={busy}
             onAction={handle}
           />
@@ -81,10 +113,26 @@ export function ServiceRow({ service, isAdmin, busy, onAction }: ServiceRowProps
                 {busy && <Spinner />}
               </div>
               <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                {service.description || 'Sin descripcion'}
+                {description}
               </p>
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={`details-${service.name}`}
+                onClick={onToggleDetails}
+                className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 dark:text-sky-400"
+              >
+                <span aria-hidden="true" className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>
+                  ›
+                </span>
+                {expanded ? 'Ocultar detalles' : 'Ver detalles'}
+              </button>
             </div>
-            <StatusBadge status={service.status} subState={service.subState} />
+            <StatusBadge
+              status={service.status}
+              notInstalled={notInstalled}
+              subState={service.subState}
+            />
           </div>
 
           <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -112,12 +160,32 @@ export function ServiceRow({ service, isAdmin, busy, onAction }: ServiceRowProps
             <ActionButtons
               status={service.status}
               isAdmin={isAdmin}
+              unavailable={notInstalled}
               busy={busy}
               onAction={handle}
             />
           </div>
+
         </td>
       </tr>
+
+      {/* Un unico panel compartido por escritorio y movil. Asi se evita
+          duplicar la consulta HTTP aunque ambas variantes de fila existan. */}
+      {expanded && (
+        <tr className="border-b border-slate-200 bg-slate-50/70 dark:border-slate-700 dark:bg-slate-950/50">
+          <td colSpan={6} className="px-4 py-4">
+            <div id={`details-${service.name}`}>
+              <ServiceDetailsPanel
+                service={service}
+                refreshKey={`${service.status}-${service.pid ?? 0}`}
+                isAdmin={isAdmin}
+                busy={busy}
+                onRemove={onRemove}
+              />
+            </div>
+          </td>
+        </tr>
+      )}
     </>
   );
 }
