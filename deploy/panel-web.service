@@ -1,0 +1,68 @@
+# =============================================================================
+#  panel-web.service — La propia aplicacion instalada como servicio de systemd
+#
+#  Destino:  /etc/systemd/system/panel-web.service
+#  Instalar: sudo ./deploy/install.sh   (o seguir los pasos del README)
+#
+#  Con esta unit el panel deja de ser "algo que alguien levanta a mano con
+#  docker compose" y pasa a ser un SERVICIO DEL SISTEMA mas, gestionado por el
+#  mismo systemd que el panel administra:
+#
+#      sudo systemctl start   panel-web
+#      sudo systemctl stop    panel-web
+#      sudo systemctl status  panel-web
+#      sudo systemctl enable  panel-web     <- arranque automatico al bootear
+#      journalctl -u panel-web -f           <- sus logs en el journal
+#
+#  Detalle bonito para la defensa: el panel puede verse a si mismo. Basta con
+#  anadir "panel-web" a ALLOWED_SERVICES en backend/.env y aparecera en su
+#  propia tabla. (Ojo: detenerse a si mismo desde la interfaz apagaria el
+#  panel; es una buena demostracion de por que existe la lista blanca.)
+# =============================================================================
+
+[Unit]
+Description=Panel Web de Control de Servicios Systemd (proyecto de Sistemas Operativos)
+Documentation=file:///opt/panel-web/README.md
+
+# ORDEN DE ARRANQUE: sin el daemon de Docker no hay contenedores que levantar.
+#   Requires= -> dependencia FUERTE: si docker.service se detiene o falla,
+#                systemd detiene tambien esta unit.
+#   After=    -> orden: no arrancar hasta que docker.service este activo.
+#                (Requires por si solo NO garantiza el orden; hacen falta ambas.)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=oneshot: ExecStart no deja un proceso vivo en primer plano, porque
+# `docker compose up -d` termina en cuanto los contenedores estan lanzados.
+# Los procesos reales (Node y Nginx) son hijos del daemon de Docker, no de
+# esta unit.
+Type=oneshot
+
+# RemainAfterExit=yes: sin esto, systemd marcaria la unit como "inactive" en
+# cuanto ExecStart termina, y `systemctl stop` no ejecutaria el ExecStop.
+# Con esto la unit se considera "active (exited)" mientras el stack este arriba.
+RemainAfterExit=yes
+
+WorkingDirectory=/opt/panel-web
+
+# --remove-orphans limpia contenedores de versiones anteriores del compose.
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+
+# `down` (no `stop`) para retirar tambien la red del proyecto. El volumen
+# panel-data NO se toca: los usuarios y la auditoria sobreviven al reinicio.
+ExecStop=/usr/bin/docker compose down
+
+# systemctl reload panel-web -> reinicia los contenedores sin recrearlos.
+ExecReload=/usr/bin/docker compose restart
+
+# La primera vez puede tener que construir las imagenes (npm ci, apt-get):
+# se da margen suficiente para que systemd no aborte el arranque.
+TimeoutStartSec=600
+TimeoutStopSec=120
+
+[Install]
+# multi-user.target es el "runlevel" normal de un servidor sin entorno
+# grafico: al hacer `systemctl enable`, el panel arranca solo en cada boot.
+WantedBy=multi-user.target

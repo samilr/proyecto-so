@@ -1,0 +1,63 @@
+/**
+ * Tailwind CSS v4 — configuracion "CSS-first".
+ * En v4 ya no hace falta tailwind.config.js: el tema y las variantes se
+ * declaran aqui mismo con @theme y @custom-variant.
+ */
+@import 'tailwindcss';
+
+/* Modo oscuro por CLASE (no por media query) para poder alternarlo con un
+   boton en la barra de navegacion. La clase `dark` se pone en <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Tipografia del sistema: carga instantanea, sin peticiones a Google Fonts
+     (importante porque el servidor de la demostracion puede no tener salida
+     a internet). */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+}
+
+/* Punto pulsante del badge de estado "active": se define aqui porque combina
+   dos animaciones (el halo que se expande y el punto fijo). */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  80%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.pulse-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: currentColor;
+  animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Respeta a quien pide menos movimiento en su sistema (accesibilidad). */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-ring::before,
+  .animate-spin {
+    animation: none;
+  }
+}

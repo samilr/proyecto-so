@@ -1,0 +1,21 @@
+# Dependencias: se reinstalan dentro de la imagen con npm ci (los binarios
+# deben corresponder a la plataforma del contenedor, no a la del host).
+node_modules
+
+# Resultado de un build local: la imagen genera el suyo propio.
+dist
+
+# Variables de entorno locales (VITE_API_URL de desarrollo). En produccion no
+# se usan: el cliente llama con rutas relativas a traves del proxy de Nginx.
+.env
+.env.local
+.env.*.local
+
+# Ruido del desarrollo
+.git
+.gitignore
+.DS_Store
+*.log
+npm-debug.log*
+.vscode
+README.md

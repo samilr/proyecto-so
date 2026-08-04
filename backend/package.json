@@ -1,0 +1,22 @@
+{
+  "name": "panel-systemd-backend",
+  "version": "1.0.0",
+  "description": "Backend del Panel Web de Control de Servicios Systemd (proyecto de Sistemas Operativos)",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

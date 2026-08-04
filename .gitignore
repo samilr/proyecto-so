@@ -1,0 +1,24 @@
+# Dependencias (se reinstalan con npm ci / dentro de la imagen Docker)
+node_modules/
+
+# Secretos: el .env real NUNCA se versiona. Se versiona .env.example.
+.env
+.env.local
+
+# Base de datos local (en produccion vive en el volumen Docker panel-data)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+data/
+
+# Logs y basura del sistema
+*.log
+npm-debug.log*
+.DS_Store
+
+# Build del frontend
+dist/
+
+# Artefactos incrementales de TypeScript
+*.tsbuildinfo

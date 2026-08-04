@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Resolucion de modulos (modo bundler: Vite se encarga del empaquetado) */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* CALIDAD: modo estricto completo, exigido por el proyecto.
+       noUnusedLocals/Parameters convierten el codigo muerto en error de build,
+       y noUncheckedIndexedAccess obliga a comprobar los accesos por indice. */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src"]
+}

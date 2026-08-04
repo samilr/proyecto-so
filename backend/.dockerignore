@@ -1,0 +1,18 @@
+# Nunca copiar dependencias del host: se reinstalan dentro de la imagen con
+# "npm ci" para que los binarios nativos (better-sqlite3) se compilen para
+# la arquitectura/libc del contenedor y no para la del host (macOS/Alpine).
+node_modules
+npm-debug.log*
+
+# Secretos: el .env real se inyecta en runtime via env_file de Compose,
+# jamas se hornea dentro de la imagen.
+.env
+
+# Datos locales y artefactos de desarrollo
+*.db
+*.db-journal
+data/
+.git
+.gitignore
+.DS_Store
+README.md

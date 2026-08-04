@@ -1,0 +1,86 @@
+# =============================================================================
+#  Panel Web de Control de Servicios Systemd — Orquestacion
+#  Proyecto final de Sistemas Operativos
+#
+#  Levantar todo:   docker compose up -d --build
+#  Ver logs:        docker compose logs -f backend
+#  Detener:         docker compose down
+# =============================================================================
+
+services:
+  backend:
+    build: ./backend
+    container_name: panel-backend
+    restart: unless-stopped
+    ports:
+      # host:contenedor — publica el puerto 8000 del namespace de red del
+      # contenedor en el host, para poder probar la API con curl directamente.
+      - "8000:8000"
+    env_file: ./backend/.env
+    environment:
+      # Se fija aqui para garantizar que la base de datos SIEMPRE caiga en el
+      # volumen persistente, aunque el .env diga otra cosa.
+      - DB_PATH=/data/panel.db
+    volumes:
+      # ---------------------------------------------------------------------
+      #  EL PUNTO CLAVE DEL PROYECTO (namespaces y su "perforacion")
+      #
+      #  Un contenedor esta aislado por namespaces del kernel: tiene su propio
+      #  namespace de PID (no ve los procesos del host), de red, de IPC y de
+      #  MONTAJE (su propio arbol de directorios). Por eso, por defecto, dentro
+      #  del contenedor no existe forma de ver ni tocar el systemd del host.
+      #
+      #  Estos dos bind mounts insertan en el namespace de montaje del
+      #  contenedor los sockets UNIX por los que systemd del HOST escucha:
+      #    - /run/systemd                    -> sockets de control de systemd
+      #    - /var/run/dbus/system_bus_socket -> bus del sistema (D-Bus)
+      #
+      #  El cliente `systemctl` de dentro del contenedor se conecta a ellos y
+      #  quien ejecuta realmente start/stop/restart es el systemd del host
+      #  (su PID 1). El aislamiento se mantiene en todo lo demas: solo se abre
+      #  este canal concreto y controlado.
+      # ---------------------------------------------------------------------
+      - /run/systemd:/run/systemd
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+      # Volumen nombrado: la base de datos sobrevive a `docker compose down` y
+      # a la reconstruccion de la imagen (la capa de escritura del contenedor,
+      # en cambio, es efimera).
+      - panel-data:/data
+    cap_add:
+      # SYS_ADMIN: capability necesaria para que las operaciones de gestion
+      # sobre el systemd del host sean aceptadas. Las capabilities dividen los
+      # privilegios de root en permisos concretos: se concede solo esta en vez
+      # de usar --privileged (que daria TODAS y romperia el aislamiento).
+      - SYS_ADMIN
+
+  # ===========================================================================
+  #  FRONTEND — React + Vite compilado y servido por Nginx.
+  #
+  #  COMUNICACION ENTRE CONTENEDORES (para la defensa):
+  #  Compose crea automaticamente una red bridge propia para el proyecto y
+  #  conecta a ella todos los servicios. Dentro de esa red hay un servidor DNS
+  #  interno (127.0.0.11) que resuelve cada NOMBRE DE SERVICIO a la IP del
+  #  contenedor correspondiente. Por eso el nginx.conf del frontend puede
+  #  escribir `proxy_pass http://backend:8000` sin conocer ninguna IP.
+  #
+  #  Cadena completa de una accion:
+  #    Navegador -> :80 Nginx (contenedor frontend)
+  #              -> proxy /api -> :8000 Express (contenedor backend)
+  #              -> systemctl -> socket D-Bus montado del host
+  #              -> systemd del HOST (PID 1) ejecuta start/stop/restart
+  # ===========================================================================
+  frontend:
+    build: ./frontend
+    container_name: panel-frontend
+    restart: unless-stopped
+    ports:
+      # El panel queda accesible en http://<IP-del-host>/ (puerto 80).
+      - "80:80"
+    depends_on:
+      # Solo controla el ORDEN DE ARRANQUE, no espera a que el backend este
+      # listo. No es problema: Nginx arranca igual y las primeras peticiones
+      # a /api se reintentan solas con el polling cada 5 s.
+      - backend
+
+volumes:
+  panel-data:
