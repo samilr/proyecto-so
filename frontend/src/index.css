@@ -61,3 +61,72 @@ body {
     animation: none;
   }
 }
+
+/* El reporte de auditoria se imprime sin la navegacion ni los controles del
+   panel, dejando solo la bitacora y los comandos ejecutados. */
+.print-report-header {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 1.25cm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #0f172a !important;
+  }
+
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .print-report-header {
+    display: block;
+    margin-bottom: 1rem;
+    color: #0f172a;
+  }
+
+  .print-report-header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .print-report-header p {
+    margin: 0.25rem 0 0;
+    font-size: 0.8rem;
+  }
+
+  .print-report-card {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .print-report-card > div {
+    overflow: visible !important;
+  }
+
+  .print-report-card table {
+    font-size: 0.72rem;
+  }
+
+  .print-report-card th,
+  .print-report-card td {
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+
+  .print-detail {
+    display: block !important;
+    overflow: visible !important;
+    -webkit-line-clamp: unset !important;
+  }
+}

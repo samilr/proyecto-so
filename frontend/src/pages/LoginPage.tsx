@@ -7,6 +7,13 @@ import { useAuth } from '../context/AuthContext';
 import { ApiRequestError } from '../lib/apiClient';
 import { ThemeToggle } from '../components/ThemeToggle';
 
+const teamMembers = [
+  { name: 'Carlos Arias', id: '25-0326' },
+  { name: 'Samir Gonzales', id: '25-0808' },
+  { name: 'Hansel Lopez', id: '25-0461' },
+  { name: 'Elian Baez', id: '25-0489' },
+];
+
 /** Traduce el codigo de error del backend a un mensaje para el usuario. */
 function messageForError(err: unknown): string {
   if (err instanceof ApiRequestError) {
@@ -61,7 +68,7 @@ export function LoginPage() {
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <span
             className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-600 text-xl font-bold text-white"
@@ -72,9 +79,6 @@ export function LoginPage() {
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
             Panel de Servicios Systemd
           </h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Control de servicios del servidor
-          </p>
         </div>
 
         <form
@@ -151,6 +155,43 @@ export function LoginPage() {
             {loading ? 'Verificando...' : 'Iniciar sesion'}
           </button>
         </form>
+
+        <section
+          aria-labelledby="team-heading"
+          className="mt-4 rounded-xl border border-slate-200 bg-white/70 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/70"
+        >
+          <h2
+            id="team-heading"
+            className="text-center text-xs font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400"
+          >
+            Integrantes
+          </h2>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {teamMembers.map((member) => (
+              <li
+                key={member.id}
+                className="flex items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 dark:bg-slate-800"
+              >
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {member.name}
+                </span>
+                <span className="font-mono text-xs text-sky-700 dark:text-sky-400">
+                  {member.id}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <p className="mt-4 text-center text-sm leading-6 text-slate-500 dark:text-slate-400">
+          Esta aplicación web permite supervisar y administrar de forma
+          centralizada los servicios systemd de un servidor Linux. Desde el
+          panel puedes consultar en tiempo real su estado, consumo de CPU y
+          memoria, procesos, PID y tiempo activo; también puedes iniciar,
+          detener o reiniciar servicios, agregar nuevas unidades al panel y
+          revisar el historial de comandos ejecutados con sus resultados, todo
+          desde una interfaz sencilla y sin utilizar directamente la terminal.
+        </p>
 
         <p className="mt-4 text-center text-xs text-slate-400 dark:text-slate-500">
           Proyecto final · Sistemas Operativos

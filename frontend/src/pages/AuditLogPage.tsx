@@ -5,19 +5,71 @@
  * ejecuto cada accion sobre un servicio, con su resultado. La proteccion de
  * la ruta la hace ProtectedRoute en el cliente y requireAdmin en el backend.
  */
+import { useState } from 'react';
 import { PAGE_SIZE, useAuditLogs } from '../hooks/useAuditLogs';
 import { ACTION_LABELS, formatDateTime } from '../lib/format';
+import { api } from '../lib/apiClient';
+import type { AuditLogEntry } from '../types/api';
+
+/** Construye el comando equivalente para las acciones de control de systemd. */
+function commandForLog(log: AuditLogEntry): string {
+  if (
+    (log.action === 'start' || log.action === 'stop' || log.action === 'restart') &&
+    log.service
+  ) {
+    return `systemctl ${log.action} ${log.service}`;
+  }
+
+  return '—';
+}
 
 export function AuditLogPage() {
   const { logs, total, page, loading, error, hasPrev, hasNext, nextPage, prevPage, refresh } =
     useAuditLogs();
+  const [printLogs, setPrintLogs] = useState<AuditLogEntry[] | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const to = Math.min((page + 1) * PAGE_SIZE, total);
+  const reportLogs = printLogs ?? logs;
+  const reportFrom = printLogs ? (printLogs.length > 0 ? 1 : 0) : from;
+  const reportTo = printLogs ? printLogs.length : to;
+  const reportTotal = printLogs ? printLogs.length : total;
+
+  async function handlePrint() {
+    setPrinting(true);
+
+    try {
+      // El backend limita cada consulta a 200 filas; se recorren paginas hasta
+      // completar el total para que el reporte no omita registros antiguos.
+      const batchSize = 200;
+      const firstBatch = await api.getLogs(batchSize, 0);
+      const allLogs = [...firstBatch.logs];
+
+      while (allLogs.length < firstBatch.total) {
+        const nextBatch = await api.getLogs(batchSize, allLogs.length);
+        if (nextBatch.logs.length === 0) break;
+        allLogs.push(...nextBatch.logs);
+      }
+
+      setPrintLogs(allLogs);
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      window.print();
+    } catch {
+      // Si la consulta completa falla, se imprime la pagina ya cargada para
+      // que el boton siga siendo util aunque el servidor tenga una incidencia.
+      setPrintLogs(logs);
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      window.print();
+    } finally {
+      setPrintLogs(null);
+      setPrinting(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="no-print flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             Bitacora de auditoria
@@ -31,6 +83,15 @@ export function AuditLogPage() {
 
         <button
           type="button"
+          onClick={() => void handlePrint()}
+          disabled={printing || loading}
+          className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-sky-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-wait disabled:opacity-60"
+        >
+          {printing ? 'Preparando reporte...' : '🖨 Imprimir reporte'}
+        </button>
+
+        <button
+          type="button"
           onClick={refresh}
           disabled={loading}
           className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-300 ring-inset transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:opacity-50 dark:text-slate-300 dark:ring-slate-600 dark:hover:bg-slate-800"
@@ -39,7 +100,13 @@ export function AuditLogPage() {
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="print-report-header">
+        <h1>Reporte de auditoria</h1>
+        <p>Bitacora de acciones y comandos ejecutados desde el Panel de Servicios Systemd.</p>
+        <p>Registros incluidos: {reportFrom}–{reportTo} de {reportTotal}</p>
+      </div>
+
+      <div className="print-report-card overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
@@ -48,6 +115,7 @@ export function AuditLogPage() {
                 <th scope="col" className="px-4 py-3 font-medium">Usuario</th>
                 <th scope="col" className="px-4 py-3 font-medium">Accion</th>
                 <th scope="col" className="px-4 py-3 font-medium">Servicio</th>
+                <th scope="col" className="px-4 py-3 font-medium">Comando</th>
                 <th scope="col" className="px-4 py-3 font-medium">Resultado</th>
                 <th scope="col" className="px-4 py-3 font-medium">Detalle</th>
               </tr>
@@ -58,7 +126,7 @@ export function AuditLogPage() {
                 <>
                   {[0, 1, 2, 3].map((i) => (
                     <tr key={i} className="border-b border-slate-200 dark:border-slate-700">
-                      <td colSpan={6} className="px-4 py-4">
+                      <td colSpan={7} className="px-4 py-4">
                         <div className="h-4 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
                       </td>
                     </tr>
@@ -69,7 +137,7 @@ export function AuditLogPage() {
               {error && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-10 text-center text-sm font-medium text-red-600 dark:text-red-400"
                   >
                     {error}
@@ -80,7 +148,7 @@ export function AuditLogPage() {
               {!loading && !error && logs.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400"
                   >
                     No hay registros de auditoria en esta pagina.
@@ -88,7 +156,7 @@ export function AuditLogPage() {
                 </tr>
               )}
 
-              {logs.map((log) => (
+              {reportLogs.map((log) => (
                 <tr
                   key={log.id}
                   className="border-b border-slate-200 last:border-0 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/50"
@@ -105,6 +173,9 @@ export function AuditLogPage() {
                   <td className="px-4 py-3 font-mono text-sm text-slate-600 dark:text-slate-300">
                     {log.service ?? '—'}
                   </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600 dark:text-slate-300">
+                    {commandForLog(log)}
+                  </td>
                   <td className="px-4 py-3">
                     {log.success ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
@@ -117,7 +188,7 @@ export function AuditLogPage() {
                     )}
                   </td>
                   <td className="max-w-xs px-4 py-3 text-xs text-slate-500 dark:text-slate-400">
-                    <span className="line-clamp-2 break-words" title={log.detail ?? undefined}>
+                    <span className="print-detail line-clamp-2 break-words" title={log.detail ?? undefined}>
                       {log.detail ?? '—'}
                     </span>
                   </td>
@@ -128,7 +199,7 @@ export function AuditLogPage() {
         </div>
 
         {/* Paginacion servidor: limit/offset + total */}
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="no-print flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-slate-700">
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Pagina {page + 1} de {Math.max(1, Math.ceil(total / PAGE_SIZE))}
           </p>
