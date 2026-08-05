@@ -3,13 +3,18 @@
  */
 import { useState } from 'react';
 import { ServiceRow } from './ServiceRow';
-import type { ServiceAction, ServiceStatus } from '../types/api';
+import type { ServiceAction, ServiceStatus, SystemInfo } from '../types/api';
+
+/** Numero de columnas de la tabla; se usa en todos los colSpan. */
+const COLUMNS = 7;
 
 interface ServiceTableProps {
   services: ServiceStatus[];
   isAdmin: boolean;
   loading: boolean;
   error: string | null;
+  /** Capacidad del host, para escalar los medidores de cada fila. */
+  system: SystemInfo | null;
   /** Nombre del servicio con una accion en curso, o null. */
   busyService: string | null;
   onAction: (service: ServiceStatus, action: ServiceAction) => void;
@@ -22,7 +27,7 @@ function SkeletonRows() {
     <>
       {[0, 1, 2].map((i) => (
         <tr key={i} className="border-b border-slate-200 dark:border-slate-700">
-          <td colSpan={6} className="px-4 py-4">
+          <td colSpan={COLUMNS} className="px-4 py-4">
             <div className="h-4 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700" />
           </td>
         </tr>
@@ -36,6 +41,7 @@ export function ServiceTable({
   isAdmin,
   loading,
   error,
+  system,
   busyService,
   onAction,
   onRemove,
@@ -47,13 +53,18 @@ export function ServiceTable({
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="overflow-x-auto">
         <table className="w-full text-left">
-          <thead className="hidden border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 md:table-header-group dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+          <thead className="hidden border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 lg:table-header-group dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
             <tr>
               <th scope="col" className="px-4 py-3 font-medium">Servicio</th>
               <th scope="col" className="px-4 py-3 font-medium">Estado</th>
-              <th scope="col" className="px-4 py-3 font-medium">PID</th>
-              <th scope="col" className="px-4 py-3 font-medium">Uptime</th>
+              <th scope="col" className="px-4 py-3 font-medium" title="Porcentaje de un nucleo, como en top">
+                CPU
+              </th>
               <th scope="col" className="px-4 py-3 font-medium">Memoria</th>
+              <th scope="col" className="px-4 py-3 font-medium" title="Procesos e hilos del cgroup del servicio">
+                Procesos
+              </th>
+              <th scope="col" className="px-4 py-3 font-medium">Uptime</th>
               <th scope="col" className="px-4 py-3 font-medium">Acciones</th>
             </tr>
           </thead>
@@ -63,7 +74,7 @@ export function ServiceTable({
 
             {error && services.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center">
+                <td colSpan={COLUMNS} className="px-4 py-10 text-center">
                   <p className="text-sm font-medium text-red-600 dark:text-red-400">
                     {error}
                   </p>
@@ -77,7 +88,7 @@ export function ServiceTable({
             {showEmpty && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={COLUMNS}
                   className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400"
                 >
                   No hay servicios administrados. Un administrador puede usar{' '}
@@ -91,6 +102,7 @@ export function ServiceTable({
                 key={service.name}
                 service={service}
                 isAdmin={isAdmin}
+                system={system}
                 busy={busyService === service.name}
                 expanded={expandedService === service.name}
                 onToggleDetails={() =>

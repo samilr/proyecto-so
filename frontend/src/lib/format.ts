@@ -40,6 +40,52 @@ export function formatBytes(bytes: number | null): string {
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${unit}`;
 }
 
+/**
+ * Porcentaje -> "12.4 %".
+ * Se admite > 100 a proposito: el %CPU de un servicio es porcentaje de UN
+ * nucleo (convencion de `top`), asi que 240 % significa 2.4 nucleos ocupados.
+ */
+export function formatPercent(value: number | null, decimals = 1): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  return `${value.toFixed(decimals)} %`;
+}
+
+/** Numero entero con separador de miles: 1234 -> "1,234". */
+export function formatCount(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '—';
+  return value.toLocaleString('es-DO');
+}
+
+/**
+ * Tiempo de CPU acumulado (segundos) -> "1h 12m" / "3m 4s" / "820ms".
+ * Es el equivalente de la columna TIME de `top`: cuanta CPU ha consumido el
+ * servicio en total, no cuanta esta usando ahora.
+ */
+export function formatCpuTime(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '—';
+  if (seconds === 0) return '0s';
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+/** Etiqueta legible del UnitFileState de systemd. */
+export const UNIT_FILE_STATE_LABELS: Record<string, string> = {
+  enabled: 'Arranca en el boot',
+  'enabled-runtime': 'Habilitado (temporal)',
+  disabled: 'No arranca en el boot',
+  static: 'Sin habilitacion propia',
+  masked: 'Enmascarado',
+  indirect: 'Habilitado indirectamente',
+  generated: 'Generado por systemd',
+};
+
 /** ISO 8601 -> fecha y hora local en formato dominicano (es-DO). */
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);

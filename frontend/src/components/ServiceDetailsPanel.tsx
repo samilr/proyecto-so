@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiRequestError } from '../lib/apiClient';
-import { formatBytes, formatDateTime, formatUptime } from '../lib/format';
+import {
+  formatBytes,
+  formatCount,
+  formatCpuTime,
+  formatDateTime,
+  formatPercent,
+  formatUptime,
+  UNIT_FILE_STATE_LABELS,
+} from '../lib/format';
 import type { ServiceDetailsResponse, ServiceStatus } from '../types/api';
 
 interface ServiceDetailsPanelProps {
@@ -102,8 +110,35 @@ export function ServiceDetailsPanel({
         <DetailItem label="PID principal" value={current.pid?.toString() ?? '—'} mono />
         <DetailItem label="Tiempo activo" value={formatUptime(current.uptimeSeconds)} />
         <DetailItem label="Memoria" value={formatBytes(current.memoryBytes)} />
+
+        {/* --- Metricas de recursos (cgroup del servicio) --- */}
+        <DetailItem label="CPU ahora" value={formatPercent(current.cpuPercent)} />
+        <DetailItem
+          label="CPU acumulada"
+          value={formatCpuTime(current.cpuSeconds)}
+        />
+        <DetailItem
+          label="Procesos e hilos"
+          value={
+            current.tasksMax !== null
+              ? `${formatCount(current.tasks)} / ${formatCount(current.tasksMax)}`
+              : formatCount(current.tasks)
+          }
+        />
+        <DetailItem
+          label="Reinicios automaticos"
+          value={formatCount(current.restarts)}
+        />
+
         <DetailItem label="Carga" value={current.loadState ?? '—'} mono />
-        <DetailItem label="Habilitado" value={metadata?.unitFileState ?? '—'} mono />
+        <DetailItem
+          label="Arranque automatico"
+          value={
+            current.unitFileState
+              ? (UNIT_FILE_STATE_LABELS[current.unitFileState] ?? current.unitFileState)
+              : (metadata?.unitFileState ?? '—')
+          }
+        />
         <DetailItem label="Tipo" value={metadata?.serviceType ?? '—'} mono />
         <DetailItem label="Politica de reinicio" value={metadata?.restartPolicy ?? '—'} mono />
         <div className="sm:col-span-2 lg:col-span-4">

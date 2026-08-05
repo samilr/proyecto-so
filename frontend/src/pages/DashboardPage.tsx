@@ -14,13 +14,15 @@
  *   5. Se reanuda el sondeo y se pide un refresco inmediato (systemd puede
  *      seguir en 'activating' un instante despues de responder).
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ServiceTable } from '../components/ServiceTable';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AddServiceModal } from '../components/AddServiceModal';
+import { SystemOverview } from '../components/SystemOverview';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useServices } from '../hooks/useServices';
+import { useSystemInfo } from '../hooks/useSystemInfo';
 import { api, ApiRequestError } from '../lib/apiClient';
 import { ACTION_PAST_PARTICIPLE, formatTime } from '../lib/format';
 import type { ServiceAction, ServiceStatus } from '../types/api';
@@ -46,6 +48,9 @@ export function DashboardPage() {
     updateService,
   } = useServices();
 
+  // Metricas del anfitrion: sondeo propio, al mismo ritmo que los servicios.
+  const { system, loading: systemLoading } = useSystemInfo();
+
   const [busyService, setBusyService] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -53,11 +58,6 @@ export function DashboardPage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [removeCandidate, setRemoveCandidate] = useState<ServiceStatus | null>(null);
   const [removingService, setRemovingService] = useState<string | null>(null);
-
-  const activeCount = useMemo(
-    () => services.filter((s) => s.status === 'active').length,
-    [services]
-  );
 
   /** Ejecuta la accion ya confirmada contra la API. */
   const runAction = useCallback(
@@ -178,10 +178,7 @@ export function DashboardPage() {
             Servicios del sistema
           </h2>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-              {activeCount}
-            </span>{' '}
-            de {services.length} servicios activos
+            Metricas leidas de systemd y del kernel del servidor
           </p>
         </div>
 
@@ -216,6 +213,9 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* Indicadores del anfitrion: CPU, memoria, servicios activos y uptime */}
+      <SystemOverview system={system} loading={systemLoading} services={services} />
+
       {/* Aviso de error cuando ya hay datos en pantalla (el error total se
           muestra dentro de la tabla). */}
       {error && services.length > 0 && (
@@ -232,6 +232,7 @@ export function DashboardPage() {
         isAdmin={isAdmin}
         loading={loading}
         error={error}
+        system={system}
         busyService={busyService ?? removingService}
         onAction={handleAction}
         onRemove={setRemoveCandidate}

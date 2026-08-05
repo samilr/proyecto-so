@@ -21,6 +21,7 @@ import type {
   ServiceDetailsResponse,
   ServiceStatus,
   ServicesResponse,
+  SystemInfoResponse,
 } from '../types/api';
 
 /**
@@ -211,6 +212,14 @@ export const api = {
       `/api/services/${encodeURIComponent(name)}/${action}`,
       { method: 'POST' }
     );
+  },
+
+  /**
+   * GET /api/system — metricas del servidor anfitrion (CPU, RAM, uptime).
+   * Cualquier rol autenticado: son datos de solo lectura.
+   */
+  getSystemInfo(signal?: AbortSignal): Promise<SystemInfoResponse> {
+    return request<SystemInfoResponse>('/api/system', { signal });
   },
 
   /** GET /api/logs?limit=&offset= — solo admin. */

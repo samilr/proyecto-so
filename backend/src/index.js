@@ -15,6 +15,7 @@ import { config } from './config.js';
 import { initDb, closeDb, listManagedServiceNames } from './db.js';
 import { authRouter } from './routes/auth.routes.js';
 import { servicesRouter } from './routes/services.routes.js';
+import { systemRouter } from './routes/system.routes.js';
 import { logsRouter } from './routes/logs.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
@@ -70,6 +71,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/services', servicesRouter);
+app.use('/api/system', systemRouter);
 app.use('/api/logs', logsRouter);
 
 // 404 y manejador global de errores SIEMPRE al final: Express recorre los

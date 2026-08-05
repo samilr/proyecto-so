@@ -152,7 +152,54 @@ Base URL: `http://localhost:8000`
 | `POST` | `/api/services/:name/start` | JWT + admin | Iniciar servicio |
 | `POST` | `/api/services/:name/stop` | JWT + admin | Detener servicio |
 | `POST` | `/api/services/:name/restart` | JWT + admin | Reiniciar servicio |
+| `GET` | `/api/system` | JWT | Métricas del servidor anfitrión: CPU, memoria, carga y uptime |
 | `GET` | `/api/logs?limit=50&offset=0` | JWT + admin | Bitácora de auditoría |
+
+### Métricas de recursos
+
+Cada `ServiceStatus` incluye, además del estado, las métricas del **cgroup** del servicio:
+
+| Campo | Origen en systemd | Significado |
+|---|---|---|
+| `cpuPercent` | derivado de `CPUUsageNSec` | % de **un núcleo**, como en `top`. `null` hasta la segunda muestra |
+| `cpuSeconds` | `CPUUsageNSec` | Tiempo de CPU acumulado desde que arrancó (columna `TIME` de `top`) |
+| `memoryBytes` | `MemoryCurrent` | Memoria residente del cgroup |
+| `tasks` / `tasksMax` | `TasksCurrent` / `TasksMax` | Procesos + hilos, y el límite del cgroup v2 |
+| `restarts` | `NRestarts` | Reinicios automáticos por la política `Restart=` |
+| `unitFileState` | `UnitFileState` | `enabled` / `disabled` / `static`: si arranca solo en cada boot |
+
+**Por qué `cpuPercent` empieza en `null`:** systemd no expone un porcentaje, sino `CPUUsageNSec`, un **contador acumulado** de nanosegundos de CPU. El porcentaje es una derivada:
+
+```
+%CPU = (Δ tiempo de CPU / Δ tiempo de reloj) × 100
+```
+
+El backend guarda en memoria la muestra anterior de cada servicio y calcula la diferencia entre sondeos — la misma técnica que usan `top`, `htop` y `systemd-cgtop`. Por eso el primer sondeo no tiene con qué comparar y devuelve `null`; el valor aparece en el segundo (unos 5 s después). La línea base se reinicia si cambia el PID, porque al reiniciarse el servicio systemd pone el contador a cero.
+
+### GET /api/system — métricas del anfitrión
+
+Estas cifras son del **host**, no del contenedor, y eso es un punto académico del proyecto: `/proc/stat`, `/proc/loadavg` y `/proc/meminfo` **no están aislados por ningún namespace**. El contenedor comparte el kernel del anfitrión, así que `os.cpus()`, `os.loadavg()` y `os.totalmem()` devuelven los valores reales de la máquina. Una máquina virtual no podría: tendría su propio kernel. De hecho `kernel` en la respuesta es la versión del kernel del host.
+
+```json
+{
+  "system": {
+    "cpuCores": 10,
+    "cpuPercent": 0.4,
+    "loadAverage": { "one": 3.39, "five": 3.12, "fifteen": 3.05, "percentOfCapacity": 33.9 },
+    "memoryTotalBytes": 8217956352,
+    "memoryFreeBytes": 4586307584,
+    "memoryUsedBytes": 3631648768,
+    "memoryPercent": 44.2,
+    "uptimeSeconds": 412339,
+    "kernel": "6.12.67-linuxkit",
+    "platform": "linux",
+    "arch": "arm64",
+    "backendUptimeSeconds": 17
+  }
+}
+```
+
+La **carga media** (`loadAverage`) no es un porcentaje: es el número medio de procesos ejecutables o en espera de E/S ininterrumpible en 1, 5 y 15 minutos. Una carga igual al número de núcleos significa el sistema justo saturado; por encima, hay procesos haciendo cola. `percentOfCapacity` la normaliza contra `cpuCores` para poder mostrarla en un medidor.
 
 ### Formato de error (todas las respuestas de error)
 
